@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { background-color: #000; color: #fff; font-family: 'Inter', sans-serif; }
+        .bg-card { background-color: #0a0a0a; border: 1px solid #1a1a1a; }
+        .text-expense { color: #ff4d4d; }
+        .text-credit { color: #00ff88; }
+        input, select { background: #111 !important; border: 1px solid #222 !important; color: white !important; }
+        .cal-day { aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 8px; font-size: 0.75rem; }
+        .cal-day.selected { background: #fff !important; color: #000 !important; font-weight: bold; }
+        .cal-day.has-data { border-bottom: 2px solid #00ff88; }
+    </style>
+</head>
+<body class="p-4 lg:p-8">
+
+    <div id="setup-modal" class="fixed inset-0 bg-black z-50 flex items-center justify-center hidden">
+        <div class="bg-card p-8 rounded-3xl w-full max-w-md">
+            <h2 class="text-2xl font-bold mb-6">Welcome</h2>
+            <input type="text" id="setup-name" placeholder="Your Name" class="w-full p-3 rounded mb-4">
+            <input type="number" id="setup-balance" placeholder="Starting Balance (₹)" class="w-full p-3 rounded mb-4">
+            <input type="number" id="setup-budget" placeholder="Monthly Budget (₹)" class="w-full p-3 rounded mb-6">
+            <button onclick="saveSetup()" class="w-full bg-white text-black font-bold py-3 rounded">Start</button>
+        </div>
+    </div>
+
+    <header class="flex justify-between items-start mb-8 border-b border-gray-900 pb-6">
+        <div>
+            <h1 class="text-gray-500 text-xs uppercase tracking-widest">Hi, <span id="user-display" class="text-white">User</span></h1>
+            <div id="main-balance" class="text-4xl font-bold mt-1 text-credit">₹ 0.00</div>
+        </div>
+        <div class="text-right">
+            <p class="text-gray-500 text-xs mb-1">LIVE STATUS</p>
+            <div class="flex gap-4 text-sm font-mono">
+                <span id="live-credit" class="text-credit">+₹0</span>
+                <span id="live-expense" class="text-expense">-₹0</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8 space-y-6">
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-card p-5 rounded-2xl">
+                    <h3 class="text-xs font-bold text-gray-500 mb-4 uppercase">General Entry (Daily Log)</h3>
+                    <input type="text" id="t-title" placeholder="Title" class="w-full p-2 mb-2 rounded text-sm">
+                    <div class="flex gap-2 mb-2">
+                        <input type="number" id="t-amount" placeholder="Amount" class="w-1/2 p-2 rounded text-sm">
+                        <select id="t-type" class="w-1/2 p-2 rounded text-sm">
+                            <option value="expense">Expense (-)</option>
+                            <option value="credit">Credit (+)</option>
+                        </select>
+                    </div>
+                    <button onclick="addGeneralEntry()" class="w-full bg-white text-black text-xs font-bold py-2 rounded uppercase tracking-wider">Add to Daily Log</button>
+                </div>
+
+                <div class="bg-card p-5 rounded-2xl border-blue-900/20">
+                    <h3 class="text-xs font-bold text-gray-500 mb-4 uppercase">Pending Entry (People)</h3>
+                    <input type="text" id="p-name" placeholder="Person Name" class="w-full p-2 mb-2 rounded text-sm">
+                    <div class="flex gap-2 mb-2">
+                        <input type="number" id="p-amount" placeholder="Amount" class="w-1/2 p-2 rounded text-sm">
+                        <select id="p-type" class="w-1/2 p-2 rounded text-sm">
+                            <option value="give">I Gave (I will GET back)</option>
+                            <option value="get">I Took (I will GIVE back)</option>
+                        </select>
+                    </div>
+                    <button onclick="addPendingEntry()" class="w-full bg-blue-600 text-xs font-bold py-2 rounded uppercase tracking-wider">Add to Pending</button>
+                </div>
+            </div>
+
+            <div class="bg-card p-4 rounded-2xl">
+                <input type="text" id="search-bar" oninput="render()" placeholder="Search Daily Log..." class="w-full p-2 rounded text-xs">
+            </div>
+
+            <div class="bg-card p-5 rounded-2xl">
+                <div class="flex justify-between text-[10px] uppercase tracking-widest mb-2 text-gray-400">
+                    <span>Monthly Budget Remaining</span>
+                    <span id="budget-left-text" class="text-white font-mono">₹ 0</span>
+                </div>
+                <div class="w-full bg-gray-900 h-1.5 rounded-full">
+                    <div id="budget-bar" class="h-full transition-all duration-500" style="width: 100%"></div>
+                </div>
+            </div>
+
+            <div class="bg-card p-6 rounded-2xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase" id="history-label">Daily Log</h3>
+                    <div class="flex gap-2">
+                        <button onclick="exportPDF('week')" class="text-[9px] bg-gray-800 px-2 py-1 rounded">Weekly PDF</button>
+                        <button onclick="exportPDF('month')" class="text-[9px] bg-gray-800 px-2 py-1 rounded">Monthly PDF</button>
+                    </div>
+                </div>
+                <div id="history-list" class="space-y-2 max-h-64 overflow-y-auto pr-2"></div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-card p-5 rounded-2xl">
+                    <h3 class="text-xs text-gray-500 mb-4 uppercase tracking-tighter font-bold">Pending People (To Get / Give)</h3>
+                    <div id="pending-list" class="space-y-2 text-xs"></div>
+                </div>
+                <div class="bg-card p-5 rounded-2xl">
+                    <h3 class="text-xs text-gray-500 mb-4 uppercase tracking-tighter font-bold">Financial Summary</h3>
+                    <div id="summary-content" class="text-xs space-y-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-4">
+            <div class="bg-card p-6 rounded-2xl sticky top-8">
+                <div class="flex justify-between items-center mb-6">
+                    <button onclick="navMonth(-1)" class="p-1 hover:text-credit">◀</button>
+                    <span id="cal-month-year" class="font-bold text-sm tracking-widest"></span>
+                    <button onclick="navMonth(1)" class="p-1 hover:text-credit">▶</button>
+                </div>
+                <div id="cal-grid" class="grid grid-cols-7 gap-1"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let state = JSON.parse(localStorage.getItem('exp_v3_fixed')) || {
+            user: "", initial: 0, budget: 0,
+            generalTransactions: [], // Bucket 1
+            pendingTransactions: [], // Bucket 2
+            selectedDate: new Date().toISOString().split('T')[0]
+        };
+
+        let viewDate = new Date();
+
+        function saveSetup() {
+            state.user = document.getElementById('setup-name').value || "User";
+            state.initial = parseFloat(document.getElementById('setup-balance').value) || 0;
+            state.budget = parseFloat(document.getElementById('setup-budget').value) || 0;
+            saveState();
+            document.getElementById('setup-modal').classList.add('hidden');
+            render();
+        }
+
+        function addGeneralEntry() {
+            const title = document.getElementById('t-title').value;
+            const amt = parseFloat(document.getElementById('t-amount').value);
+            if(!title || !amt) return;
+
+            state.generalTransactions.unshift({
+                id: Date.now(),
+                date: state.selectedDate,
+                title, amount: amt,
+                type: document.getElementById('t-type').value
+            });
+
+            document.getElementById('t-title').value = '';
+            document.getElementById('t-amount').value = '';
+            saveState();
+        }
+
+        function addPendingEntry() {
+            const name = document.getElementById('p-name').value;
+            const amt = parseFloat(document.getElementById('p-amount').value);
+            if(!name || !amt) return;
+
+            const typeVal = document.getElementById('p-type').value;
+            state.pendingTransactions.unshift({
+                id: Date.now(),
+                date: state.selectedDate,
+                person: name,
+                amount: amt,
+                type: typeVal === 'give' ? 'to-get' : 'to-give' // Fixed Logic
+            });
+
+            document.getElementById('p-name').value = '';
+            document.getElementById('p-amount').value = '';
+            saveState();
+        }
+
+        function deleteTx(id, bucket) {
+            state[bucket] = state[bucket].filter(t => t.id !== id);
+            saveState();
+        }
+
+        function render() {
+            if(!state.user && !localStorage.getItem('exp_v3_fixed')) {
+                document.getElementById('setup-modal').classList.remove('hidden'); return;
+            }
+            document.getElementById('user-display').innerText = state.user;
+            const search = document.getElementById('search-bar').value.toLowerCase();
+
+            // Calculate Totals
+            let totalEx = state.generalTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+            let totalCr = state.generalTransactions.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
+            
+            // Logic: Giving money is an expense from wallet, Receiving is a credit
+            let pendingGave = state.pendingTransactions.filter(t => t.type === 'to-get').reduce((s, t) => s + t.amount, 0);
+            let pendingTook = state.pendingTransactions.filter(t => t.type === 'to-give').reduce((s, t) => s + t.amount, 0);
+
+            const walletBalance = state.initial + totalCr + pendingTook - totalEx - pendingGave;
+            document.getElementById('main-balance').innerText = `₹ ${walletBalance.toLocaleString()}`;
+            document.getElementById('live-credit').innerText = `+₹${totalCr + pendingTook}`;
+            document.getElementById('live-expense').innerText = `-₹${totalEx + pendingGave}`;
+
+            // Budget Remaining Logic
+            const monthStr = new Date().toISOString().slice(0, 7);
+            const monthlySpend = state.generalTransactions
+                .filter(t => t.type === 'expense' && t.date.startsWith(monthStr))
+                .reduce((s, t) => s + t.amount, 0);
+            const remain = state.budget - monthlySpend;
+            const perc = Math.max(0, (remain / state.budget) * 100);
+            document.getElementById('budget-left-text').innerText = `₹ ${remain.toLocaleString()} / ₹ ${state.budget.toLocaleString()}`;
+            document.getElementById('budget-bar').style.width = perc + '%';
+            document.getElementById('budget-bar').style.backgroundColor = perc < 20 ? '#ff4d4d' : '#00ff88';
+
+            // Daily History (General Only)
+            const histEl = document.getElementById('history-list');
+            const filtered = state.generalTransactions.filter(t => t.date === state.selectedDate && t.title.toLowerCase().includes(search));
+            histEl.innerHTML = filtered.map(t => `
+                <div class="flex justify-between items-center p-3 bg-black/40 rounded border border-gray-900 group text-xs">
+                    <span>${t.title}</span>
+                    <div class="flex items-center gap-4">
+                        <span class="${t.type === 'expense' ? 'text-expense' : 'text-credit'} font-mono">${t.type === 'expense' ? '-' : '+'}₹${t.amount}</span>
+                        <button onclick="deleteTx(${t.id}, 'generalTransactions')" class="text-gray-700 hover:text-white">✕</button>
+                    </div>
+                </div>
+            `).join('') || '<p class="text-gray-600 text-[10px]">No daily entries for this date.</p>';
+
+            // Pending People List (Pending Only)
+            const pendEl = document.getElementById('pending-list');
+            pendEl.innerHTML = state.pendingTransactions.map(t => `
+                <div class="flex justify-between text-xs border-b border-gray-900 pb-1 items-center">
+                    <span>${t.person} <span class="opacity-40 text-[9px] uppercase">(${t.date})</span></span>
+                    <div class="flex items-center gap-4">
+                        <span class="${t.type === 'to-get' ? 'text-credit' : 'text-expense'}">${t.type === 'to-get' ? 'To Get' : 'To Give'} ₹${t.amount}</span>
+                        <button onclick="deleteTx(${t.id}, 'pendingTransactions')" class="text-gray-700 hover:text-white">✕</button>
+                    </div>
+                </div>
+            `).join('') || '<p class="text-gray-600 text-[10px]">No pending debts.</p>';
+
+            // Summary Content
+            document.getElementById('summary-content').innerHTML = `
+                <div class="flex justify-between"><span>Total to Collect (Get):</span><span class="text-credit">₹${pendingGave}</span></div>
+                <div class="flex justify-between"><span>Total to Pay (Give):</span><span class="text-expense">₹${pendingTook}</span></div>
+            `;
+
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('cal-grid');
+            const myLabel = document.getElementById('cal-month-year');
+            grid.innerHTML = '';
+            const y = viewDate.getFullYear(), m = viewDate.getMonth();
+            myLabel.innerText = viewDate.toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase();
+            ['S','M','T','W','T','F','S'].forEach(d => grid.innerHTML += `<div class="text-[10px] opacity-20 text-center font-bold">${d}</div>`);
+            const first = new Date(y, m, 1).getDay();
+            const last = new Date(y, m + 1, 0).getDate();
+            for(let i=0; i<first; i++) grid.innerHTML += `<div></div>`;
+            for(let d=1; d<=last; d++) {
+                const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const hasData = state.generalTransactions.some(t => t.date === dateStr);
+                const isSel = state.selectedDate === dateStr;
+                grid.innerHTML += `<div onclick="selectDate('${dateStr}')" class="cal-day ${isSel ? 'selected' : ''} ${hasData ? 'has-data' : ''}">${d}</div>`;
+            }
+        }
+
+        function selectDate(d) { state.selectedDate = d; render(); }
+        function navMonth(dir) { viewDate.setMonth(viewDate.getMonth() + dir); renderCalendar(); }
+        function saveState() { localStorage.setItem('exp_v3_fixed', JSON.stringify(state)); render(); }
+
+        function exportPDF(range) {
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            doc.text(`${range.toUpperCase()} REPORT`, 10, 10);
+            state.generalTransactions.forEach((t, i) => doc.text(`${t.date}: ${t.title} - ${t.amount}`, 10, 20 + (i*10)));
+            doc.save("Report.pdf");
+        }
+
+        window.onload = render;
+    </script>
+</body>
+</html>
